@@ -2,12 +2,12 @@ import streamlit as st
 import whisper
 import tempfile
 import os
-from PIL import Image, ImageEnhance
+from PIL import Image
 from moviepy.editor import *
 
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="AI Video Editor", layout="wide")
-st.title("🎬 AI Scene Video Editor (Stable Render Version)")
+st.title("🎬 AI Scene Video Editor (Optimized Render Version)")
 
 # ---------------- INPUT ----------------
 images = st.file_uploader(
@@ -17,7 +17,7 @@ images = st.file_uploader(
 )
 
 audio_file = st.file_uploader(
-    "Upload Voiceover (Fish Audio MP3/WAV)",
+    "Upload Voiceover (MP3/WAV)",
     type=["mp3", "wav"]
 )
 
@@ -28,22 +28,12 @@ script_file = st.file_uploader(
 
 aspect = st.selectbox("Aspect Ratio", ["16:9", "9:16"])
 mix_transition = st.toggle("Mix Transition (0.15s)", value=False)
-filter_4k = st.toggle("4K Enhancement", value=False)
 
 # ---------------- HELPERS ----------------
 
 def size(r):
-    return (1920, 1080) if r == "16:9" else (1080, 1920)
-
-
-def enhance_image(path):
-    img = Image.open(path)
-    img = ImageEnhance.Contrast(img).enhance(1.2)
-    img = ImageEnhance.Sharpness(img).enhance(1.2)
-
-    out = path.replace(".", "_enhanced.")
-    img.save(out)
-    return out
+    # ✅ 720p for stability (IMPORTANT)
+    return (1280, 720) if r == "16:9" else (720, 1280)
 
 
 def crop_resize(clip, target):
@@ -66,7 +56,7 @@ if st.button("🚀 Generate Video", use_container_width=True):
         st.error("Missing files!")
         st.stop()
 
-    with st.spinner("Processing (this may take 2–5 min)..."):
+    with st.spinner("Processing..."):
 
         temp = tempfile.mkdtemp()
 
@@ -79,22 +69,21 @@ if st.button("🚀 Generate Video", use_container_width=True):
         script = script_file.read().decode("utf-8")
         scenes = split_scenes(script)
 
-        # ---------------- Whisper (SAFE LOAD) ----------------
+        # ---------------- Whisper (SAFE) ----------------
         try:
-            model = whisper.load_model("small")
+            model = whisper.load_model("base")  # ✅ safer than small
         except:
-            st.warning("Whisper load failed, switching to base...")
-            model = whisper.load_model("base")
+            st.warning("Whisper failed, switching to tiny...")
+            model = whisper.load_model("tiny")
 
         st.info("Transcribing audio...")
 
         result = model.transcribe(audio_path)
-        audio_duration = AudioFileClip(audio_path).duration
 
+        audio_duration = AudioFileClip(audio_path).duration
         total_scenes = len(scenes)
 
         # ---------------- SAFE TIMELINE ----------------
-        # (Hybrid approach = stable + decent sync)
         base_split = audio_duration / total_scenes
 
         scene_times = []
@@ -103,7 +92,7 @@ if st.button("🚀 Generate Video", use_container_width=True):
             end = (i + 1) * base_split
             scene_times.append((start, end))
 
-        # ---------------- VIDEO BUILD ----------------
+        # ---------------- BUILD VIDEO ----------------
         target_size = size(aspect)
         clips = []
 
@@ -113,9 +102,6 @@ if st.button("🚀 Generate Video", use_container_width=True):
 
             with open(img_path, "wb") as f:
                 f.write(images[i].read())
-
-            if filter_4k:
-                img_path = enhance_image(img_path)
 
             start, end = scene_times[i]
             duration = max(end - start, 1)
@@ -140,7 +126,7 @@ if st.button("🚀 Generate Video", use_container_width=True):
 
         output = os.path.join(temp, "output.mp4")
 
-        st.info("Rendering video... (final step)")
+        st.info("Rendering video...")
 
         final.write_videofile(
             output,
